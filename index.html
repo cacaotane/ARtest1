@@ -1,83 +1,91 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta charset="utf-8">
-    <title>WebAR Chroma Key</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>WebAR Chroma Key Fix</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
     <script>
-      AFRAME.registerShader('chromakey', {
-        schema: {
-          src: {type: 'map'},
-          color: {type: 'vec3', default: {x: 0.0, y: 1.0, z: 0.0}}, // 抜きたい色 (RGB: 0~1) ここでは緑
-          transparent: {default: true}
-        },
-
-        init: function (data) {
-          var videoTexture = new THREE.VideoTexture(data.src);
-          videoTexture.minFilter = THREE.LinearFilter;
-          this.material = new THREE.ShaderMaterial({
-            uniforms: {
-              texture: { type: 't', value: videoTexture },
-              color: { type: 'c', value: new THREE.Color(data.color.x, data.color.y, data.color.z) }
+        // クロマキーシェーダーの定義
+        AFRAME.registerShader('chromakey', {
+            schema: {
+                src: {type: 'map'},
+                color: {type: 'color', default: '0 1 0'}
             },
-            vertexShader: `
-              varying vec2 vUv;
-              void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-              }
-            `,
-            fragmentShader: `
-              uniform sampler2D texture;
-              uniform vec3 color;
-              varying vec2 vUv;
-              void main() {
-                vec4 tColor = texture2D( texture, vUv );
-                // 対象色との距離を計算（類似度）
-                float dist = distance(tColor.rgb, color);
-                // 距離が近い（色が似ている）場合は透明にする
-                if (dist < 0.4) {
-                   gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-                } else {
-                   gl_FragColor = tColor;
-                }
-              }
-            `,
-            transparent: true
-          });
-        },
-        update: function (data) {
-            // 色やテクスチャの更新が必要な場合の処理
-            this.material.uniforms.color.value.set(data.color.x, data.color.y, data.color.z);
-        }
-      });
-    </script>
-  </head>
-  
-  <body style="margin: 0; overflow: hidden;">
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
-      
-      <a-assets>
-  <video id="vid" src="./video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted autoplay></video>
-</a-assets>
-
-      <a-marker preset="hiro">
-        <a-entity geometry="primitive: plane; width: 2; height: 1.125" 
-                  rotation="-90 0 0" 
-                  position="0 0.1 0"
-                  material="shader: chromakey; src: #vid; color: 0.0 1.0 0.0">
-        </a-entity>
-      <a-marker preset="hiro">
-  <a-video src="#vid" width="2" height="1.125" position="0 0.1 0" rotation="-90 0 0"></a-video>
-</a-marker>
-    
-    <script>
-        window.addEventListener('click', function () {
-            var v = document.querySelector('#vid');
-            v.play();
+            init: function(data) {
+                const videoTexture = new THREE.VideoTexture(data.src);
+                videoTexture.minFilter = THREE.LinearFilter;
+                this.material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        tex: {value: videoTexture},
+                        keyColor: {value: new THREE.Color(data.color)}
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D tex;
+                        uniform vec3 keyColor;
+                        varying vec2 vUv;
+                        void main() {
+                            vec4 tColor = texture2D(tex, vUv);
+                            float dist = distance(tColor.rgb, keyColor);
+                            if (dist < 0.4) {
+                                discard;
+                            } else {
+                                gl_FragColor = tColor;
+                            }
+                        }
+                    `,
+                    transparent: true
+                });
+            }
         });
     </script>
-  </body>
+</head>
+
+<body style="margin: 0; overflow: hidden;">
+    <div id="start-btn" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; justify-content:center; align-items:center; color:white; font-size:20px; font-family:sans-serif; cursor:pointer;">
+        タップしてARを開始
+    </div>
+
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" renderer="colorManagement: true;">
+        <a-assets>
+            <video id="web-video" src="video.mp4#t=0.001" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
+        </a-assets>
+
+        <a-marker preset="hiro">
+            <a-entity geometry="primitive: plane; width: 2; height: 1.125"
+                      rotation="-90 0 0"
+                      material="shader: chromakey; src: #web-video; color: 0 1 0">
+            </a-entity>
+        </a-marker>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <script>
+        const btn = document.getElementById('start-btn');
+        const video = document.getElementById('web-video');
+
+        btn.addEventListener('click', function() {
+            // iPhoneではこのタイミングでplay()を呼ばないと再生されない
+            video.play().then(() => {
+                btn.style.display = 'none'; // 再生成功したら案内を消す
+            }).catch(err => {
+                console.log("Video play error:", err);
+                // ミュートにすれば再生できる可能性が高まる
+                video.muted = true;
+                video.play();
+                btn.style.display = 'none';
+            });
+        });
+    </script>
+</body>
 </html>
