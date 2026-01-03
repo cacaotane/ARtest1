@@ -60,8 +60,8 @@
     <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
       
       <a-assets>
-        <video id="vid" src="video.mp4" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted autoplay></video>
-      </a-assets>
+  <video id="vid" src="./video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted autoplay></video>
+</a-assets>
 
       <a-marker preset="hiro">
         <a-entity geometry="primitive: plane; width: 2; height: 1.125" 
