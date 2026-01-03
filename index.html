@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebAR Final Update</title>
+    <title>WebAR Chroma Key Pro</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
@@ -12,7 +12,8 @@
             schema: {
                 src: {type: 'map'},
                 color: {type: 'color', default: '#00FF00'},
-                threshold: {type: 'number', default: 0.1} // 最初は厳しめに設定
+                threshold: {type: 'number', default: 0.3},
+                smoothness: {type: 'number', default: 0.1} // ふちのボケ具合
             },
             init: function(data) {
                 const videoTexture = new THREE.VideoTexture(data.src);
@@ -21,7 +22,8 @@
                     uniforms: {
                         tex: {value: videoTexture},
                         keyColor: {value: new THREE.Color(data.color)},
-                        threshold: {value: data.threshold}
+                        threshold: {value: data.threshold},
+                        smoothness: {value: data.smoothness}
                     },
                     vertexShader: `
                         varying vec2 vUv;
@@ -34,15 +36,22 @@
                         uniform sampler2D tex;
                         uniform vec3 keyColor;
                         uniform float threshold;
+                        uniform float smoothness;
                         varying vec2 vUv;
                         void main() {
                             vec4 tColor = texture2D(tex, vUv);
                             float dist = distance(tColor.rgb, keyColor);
-                            if (dist < threshold) {
-                                discard;
-                            } else {
-                                gl_FragColor = tColor;
+                            
+                            // 単純な切捨てではなく、smoothstepで境界をなめらかにする
+                            float alpha = smoothstep(threshold, threshold + smoothness, dist);
+                            
+                            // ふちに残る緑色を少しだけ彩度を落として目立たなくする
+                            if (dist < threshold + smoothness * 2.0) {
+                                tColor.rgb *= pow(alpha, 0.5); 
                             }
+                            
+                            gl_FragColor = vec4(tColor.rgb, alpha);
+                            if (alpha <= 0.0) { discard; }
                         }
                     `,
                     transparent: true
@@ -53,16 +62,11 @@
 </head>
 
 <body style="margin: 0; overflow: hidden;">
-    <div id="start-btn" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:1000; display:flex; flex-direction:column; justify-content:center; align-items:center; color:white; font-family:sans-serif; cursor:pointer;">
+    <div id="start-btn" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; display:flex; flex-direction:column; justify-content:center; align-items:center; color:white; font-family:sans-serif; cursor:pointer;">
         <div style="font-size:24px; font-weight:bold;">画面をタップして開始</div>
-        <div style="font-size:14px; margin-top:10px;">(iPhone 14 対応版)</div>
     </div>
 
-    <a-scene embedded 
-             arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;" 
-             vr-mode-ui="enabled: false"
-             renderer="antialias: true; alpha: true; precision: mediump;">
-        
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
         <a-assets>
             <video id="web-video" src="./video.mp4" preload="auto" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
         </a-assets>
@@ -71,7 +75,7 @@
             <a-entity geometry="primitive: plane; width: 1.5; height: 2.66" 
                       position="0 1 0" 
                       rotation="0 0 0" 
-                      material="shader: chromakey; src: #web-video; color: #00FF00; threshold: 0.2">
+                      material="shader: chromakey; src: #web-video; color: #00FF00; threshold: 0.3; smoothness: 0.05">
             </a-entity>
         </a-marker>
 
@@ -81,7 +85,6 @@
     <script>
         const btn = document.getElementById('start-btn');
         const video = document.getElementById('web-video');
-
         btn.addEventListener('click', function() {
             video.play();
             btn.style.display = 'none';
